@@ -3,6 +3,7 @@ FLATPAKS=(
   "discord"
   "chrome"
   "howdy-beta-git"
+  "PrismLauncher"
 )
 
 for pak in "${FLATPAKS[@]}"; do
