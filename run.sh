@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# --- KONFIGURATION FÜR DOTFILES ---
+DOTFILES_REPO="https://github.com/Punt27/dotfiles.git" # Ersetze dies durch deine URL
+DOTFILES_DIR="$HOME/dotfiles"
+
 # Logo ausgeben
 print_logo() {
     cat << "EOF"
@@ -30,7 +34,7 @@ done
 clear
 print_logo
 
-# --- Ausführung der setup_smb.sh ---
+# --- SMB-SETUP ---
 if [ -f "./setup_smb.sh" ]; then
   echo "Starte SMB-Setup..."
   chmod +x ./setup_smb.sh
@@ -38,18 +42,12 @@ if [ -f "./setup_smb.sh" ]; then
 else
   echo "Hinweis: setup_smb.sh wurde nicht gefunden, überspringe diesen Schritt."
 fi
-# ----------------------------------------
 
 # Bei Fehlern abbrechen
 set -e
 
 # Hilfsfunktionen laden
-if [ -f "utils.sh" ]; then
-  source utils.sh
-else
-  echo "Fehler: utils.sh nicht gefunden!"
-  exit 1
-fi
+source utils.sh
 
 # Paketliste laden
 if [ ! -f "packages.conf" ]; then
@@ -73,53 +71,25 @@ sudo pacman -Syu --noconfirm
 if ! command -v yay &> /dev/null; then
   echo "Installiere yay AUR Helper..."
   sudo pacman -S --needed git base-devel --noconfirm
-  if [[ ! -d "yay" ]]; then
-    echo "Klone yay Repository..."
-  else
-    echo "yay Verzeichnis existiert bereits, es wird entfernt..."
-    rm -rf yay
-  fi
-
   git clone https://aur.archlinux.org/yay.git
   cd yay
-  echo "Kompiliere yay... gleich fertig!"
   makepkg -si --noconfirm
   cd ..
   rm -rf yay
-else
-  echo "yay ist bereits installiert."
 fi
 
 # Installation der Pakete nach Kategorien
+# (Zusätzlich stow installieren, falls nicht in packages.conf)
+sudo pacman -S --needed stow --noconfirm
+
 if [[ "$DEV_ONLY" == true ]]; then
-  # Nur essenzielle Entwicklungspakete installieren
   echo "Installiere System-Utilities..."
   install_packages "${SYSTEM_UTILS[@]}"
-  
   echo "Installiere Entwicklungswerkzeuge..."
   install_packages "${DEV_TOOLS[@]}"
 else
-  # Alle Pakete installieren
-  echo "Installiere System-Utilities..."
-  install_packages "${SYSTEM_UTILS[@]}"
-  
-  echo "Installiere Entwicklungswerkzeuge..."
-  install_packages "${DEV_TOOLS[@]}"
-  
-  echo "Installiere Wartungs-Tools..."
-  install_packages "${MAINTENANCE[@]}"
-  
-  echo "Installiere Desktop-Umgebung..."
-  install_packages "${DESKTOP[@]}"
-  
-  echo "Installiere Office-Pakete..."
-  install_packages "${OFFICE[@]}"
-  
-  echo "Installiere Multimedia-Pakete..."
-  install_packages "${MEDIA[@]}"
-  
-  echo "Installiere Schriftarten..."
-  install_packages "${FONTS[@]}"
+  echo "Installiere alle Paketgruppen..."
+  install_packages "${SYSTEM_UTILS[@]}" "${DEV_TOOLS[@]}" "${MAINTENANCE[@]}" "${DESKTOP[@]}" "${OFFICE[@]}" "${MEDIA[@]}" "${FONTS[@]}"
   
   # Dienste aktivieren
   echo "Konfiguriere Dienste..."
@@ -127,16 +97,39 @@ else
     if ! systemctl is-enabled "$service" &> /dev/null; then
       echo "Aktiviere $service..."
       sudo systemctl enable "$service"
-    else
-      echo "$service ist bereits aktiviert."
     fi
   done
 
-  # Flatpaks installieren (z.B. Discord/Spotify)
+  # Flatpaks
   if [ -f "install-flatpaks.sh" ]; then
-    echo "Installiere Flatpaks (wie Discord und Spotify)..."
+    echo "Installiere Flatpaks..."
     source install-flatpaks.sh
   fi
 fi
 
+# --- DOTFILES MIT STOW ---
+echo "------------------------------------------"
+echo "Starte Dotfiles-Einrichtung..."
+
+if [ ! -d "$DOTFILES_DIR" ]; then
+  echo "Klone Dotfiles von GitHub..."
+  git clone "$DOTFILES_REPO" "$DOTFILES_DIR"
+else
+  echo "Dotfiles-Ordner existiert bereits. Überspringe Klonen."
+fi
+
+cd "$DOTFILES_DIR"
+echo "Wende Stow an..."
+
+# Hier werden alle Unterordner in ~/dotfiles per Symlink in dein Home-Verzeichnis verknüpft
+# Beispiel: ~/dotfiles/nvim/ wird zu ~/.config/nvim/
+for dir in */; do
+    # Entferne den Slash am Ende für den stow Befehl
+    target=${dir%/}
+    echo "Verknüpfe Konfiguration für: $target"
+    stow "$target"
+done
+
+cd ~
+echo "------------------------------------------"
 echo "Setup abgeschlossen! Bitte starte dein System neu."
