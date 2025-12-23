@@ -1,128 +1,142 @@
 #!/bin/bash
 
-# Print the logo
+# Logo ausgeben
 print_logo() {
     cat << "EOF"
 
-
-$$$$$$$\                       $$\      $$$$$$\  $$$$$$$$\
-$$  __$$\                      $$ |    $$  __$$\ \____$$  |
-$$ |  $$ |$$\   $$\ $$$$$$$\ $$$$$$\   \__/  $$ |    $$  /
-$$$$$$$  |$$ |  $$ |$$  __$$\\_$$  _|   $$$$$$  |   $$  /
-$$  ____/ $$ |  $$ |$$ |  $$ | $$ |    $$  ____/   $$  /
+$$$$$$$\                        $$\      $$$$$$\  $$$$$$$$\
+$$  __$$\                       $$ |    $$  __$$\ \____$$  |
+$$ |  $$ |$$\   $$\ $$$$$$$\ $$$$$$\    \__/  $$ |    $$  /
+$$$$$$$  |$$ |  $$ |$$  __$$\\_$$  _|    $$$$$$  |   $$  /
+$$  ____/ $$ |  $$ |$$ |  $$ | $$ |     $$  ____/   $$  /
 $$ |      $$ |  $$ |$$ |  $$ | $$ |$$\ $$ |       $$  /
-$$ |      \$$$$$$  |$$ |  $$ | \$$$$  |$$$$$$$$\ $$  /     Arch Linux System Crafting Tool
-\__|       \______/ \__|  \__|  \____/ \________|\__/      by: Punt27
+$$ |      \$$$$$$  |$$ |  $$ | \$$$$  |$$$$$$$$\ $$  /      Arch Linux System Crafting Tool
+\__|       \______/ \__|  \__|  \____/ \________|\__/       von: Punt27
 
 
 EOF
 }
 
-# Parse command line arguments
+# Befehlszeilenargumente parsen
 DEV_ONLY=false
 while [[ "$#" -gt 0 ]]; do
   case $1 in
     --dev-only) DEV_ONLY=true; shift ;;
-    *) echo "Unknown parameter: $1"; exit 1 ;;
+    *) echo "Unbekannter Parameter: $1"; exit 1 ;;
   esac
 done
 
-# Clear screen and show logo
+# Bildschirm leeren und Logo zeigen
 clear
 print_logo
 
-# Exit on any error
+# --- Ausführung der setup_smb.sh ---
+if [ -f "./setup_smb.sh" ]; then
+  echo "Starte SMB-Setup..."
+  chmod +x ./setup_smb.sh
+  ./setup_smb.sh
+else
+  echo "Hinweis: setup_smb.sh wurde nicht gefunden, überspringe diesen Schritt."
+fi
+# ----------------------------------------
+
+# Bei Fehlern abbrechen
 set -e
 
-# Source utility functions
-source utils.sh
+# Hilfsfunktionen laden
+if [ -f "utils.sh" ]; then
+  source utils.sh
+else
+  echo "Fehler: utils.sh nicht gefunden!"
+  exit 1
+fi
 
-# Source the package list
+# Paketliste laden
 if [ ! -f "packages.conf" ]; then
-  echo "Error: packages.conf not found!"
+  echo "Fehler: packages.conf nicht gefunden!"
   exit 1
 fi
 
 source packages.conf
 
 if [[ "$DEV_ONLY" == true ]]; then
-  echo "Starting development-only setup..."
+  echo "Starte reines Entwicklungs-Setup..."
 else
-  echo "Starting full system setup..."
+  echo "Starte vollständiges System-Setup..."
 fi
 
-# Update the system first
-echo "Updating system..."
+# System zuerst aktualisieren
+echo "Aktualisiere System..."
 sudo pacman -Syu --noconfirm
 
-# Install yay AUR helper if not present
+# Installiere yay (AUR Helper), falls nicht vorhanden
 if ! command -v yay &> /dev/null; then
-  echo "Installing yay AUR helper..."
+  echo "Installiere yay AUR Helper..."
   sudo pacman -S --needed git base-devel --noconfirm
   if [[ ! -d "yay" ]]; then
-    echo "Cloning yay repository..."
+    echo "Klone yay Repository..."
   else
-    echo "yay directory already exists, removing it..."
+    echo "yay Verzeichnis existiert bereits, es wird entfernt..."
     rm -rf yay
   fi
 
   git clone https://aur.archlinux.org/yay.git
-
   cd yay
-  echo "building yay.... yaaaaayyyyy"
+  echo "Kompiliere yay... gleich fertig!"
   makepkg -si --noconfirm
   cd ..
   rm -rf yay
 else
-  echo "yay is already installed"
+  echo "yay ist bereits installiert."
 fi
 
-# Install packages by category
+# Installation der Pakete nach Kategorien
 if [[ "$DEV_ONLY" == true ]]; then
-  # Only install essential development packages
-  echo "Installing system utilities..."
+  # Nur essenzielle Entwicklungspakete installieren
+  echo "Installiere System-Utilities..."
   install_packages "${SYSTEM_UTILS[@]}"
   
-  echo "Installing development tools..."
+  echo "Installiere Entwicklungswerkzeuge..."
   install_packages "${DEV_TOOLS[@]}"
 else
-  # Install all packages
-  echo "Installing system utilities..."
+  # Alle Pakete installieren
+  echo "Installiere System-Utilities..."
   install_packages "${SYSTEM_UTILS[@]}"
   
-  echo "Installing development tools..."
+  echo "Installiere Entwicklungswerkzeuge..."
   install_packages "${DEV_TOOLS[@]}"
   
-  echo "Installing system maintenance tools..."
+  echo "Installiere Wartungs-Tools..."
   install_packages "${MAINTENANCE[@]}"
   
-  echo "Installing desktop environment..."
+  echo "Installiere Desktop-Umgebung..."
   install_packages "${DESKTOP[@]}"
   
-  echo "Installing desktop environment..."
+  echo "Installiere Office-Pakete..."
   install_packages "${OFFICE[@]}"
   
-  echo "Installing media packages..."
+  echo "Installiere Multimedia-Pakete..."
   install_packages "${MEDIA[@]}"
   
-  echo "Installing fonts..."
+  echo "Installiere Schriftarten..."
   install_packages "${FONTS[@]}"
   
-  # Enable services
-  echo "Configuring services..."
+  # Dienste aktivieren
+  echo "Konfiguriere Dienste..."
   for service in "${SERVICES[@]}"; do
     if ! systemctl is-enabled "$service" &> /dev/null; then
-      echo "Enabling $service..."
+      echo "Aktiviere $service..."
       sudo systemctl enable "$service"
     else
-      echo "$service is already enabled"
+      echo "$service ist bereits aktiviert."
     fi
   done
 
-  
-  # Some programs just run better as flatpaks. Like discord/spotify
-  echo "Installing flatpaks (like discord and spotify)"
-  . install-flatpaks.sh
+  # Flatpaks installieren (z.B. Discord/Spotify)
+  if [ -f "install-flatpaks.sh" ]; then
+    echo "Installiere Flatpaks (wie Discord und Spotify)..."
+    source install-flatpaks.sh
+  fi
 fi
 
-echo "Setup complete! You may want to reboot your system."
+echo "Setup abgeschlossen! Bitte starte dein System neu."
