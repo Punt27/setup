@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # --- KONFIGURATION FÜR DOTFILES ---
-DOTFILES_REPO="https://github.com/Punt27/dotfiles.git" # Ersetze dies durch deine URL
+# Bitte hier deine GitHub-URL und den Zielordner anpassen
+DOTFILES_REPO="https://github.com/DEIN_NUTZERNAME/dotfiles.git"
 DOTFILES_DIR="$HOME/dotfiles"
 
 # Logo ausgeben
@@ -34,16 +35,25 @@ done
 clear
 print_logo
 
-# --- SMB-SETUP ---
+# --- 1. AKTION: SMB-SETUP ---
 if [ -f "./setup_smb.sh" ]; then
-  echo "Starte SMB-Setup..."
+  echo ">>> Starte SMB-Setup..."
   chmod +x ./setup_smb.sh
   ./setup_smb.sh
 else
-  echo "Hinweis: setup_smb.sh wurde nicht gefunden, überspringe diesen Schritt."
+  echo "Hinweis: setup_smb.sh wurde nicht gefunden."
 fi
 
-# Bei Fehlern abbrechen
+# --- 2. AKTION: DRIVE-SETUP ---
+if [ -f "./setup_drive.sh" ]; then
+  echo ">>> Starte Drive-Setup (Laufwerke)..."
+  chmod +x ./setup_drive.sh
+  ./setup_drive.sh
+else
+  echo "Hinweis: setup_drive.sh wurde nicht gefunden."
+fi
+
+# Ab hier bei Fehlern abbrechen
 set -e
 
 # Hilfsfunktionen laden
@@ -54,23 +64,25 @@ if [ ! -f "packages.conf" ]; then
   echo "Fehler: packages.conf nicht gefunden!"
   exit 1
 fi
-
 source packages.conf
 
 if [[ "$DEV_ONLY" == true ]]; then
-  echo "Starte reines Entwicklungs-Setup..."
+  echo "Modus: Reines Entwicklungs-Setup"
 else
-  echo "Starte vollständiges System-Setup..."
+  echo "Modus: Vollständiges System-Setup"
 fi
 
-# System zuerst aktualisieren
-echo "Aktualisiere System..."
+# System aktualisieren
+echo "Aktualisiere System-Datenbanken..."
 sudo pacman -Syu --noconfirm
+
+# Grundlegende Tools installieren (inkl. stow für später)
+echo "Installiere Basis-Tools (git, stow, base-devel)..."
+sudo pacman -S --needed git base-devel stow --noconfirm
 
 # Installiere yay (AUR Helper), falls nicht vorhanden
 if ! command -v yay &> /dev/null; then
   echo "Installiere yay AUR Helper..."
-  sudo pacman -S --needed git base-devel --noconfirm
   git clone https://aur.archlinux.org/yay.git
   cd yay
   makepkg -si --noconfirm
@@ -79,13 +91,9 @@ if ! command -v yay &> /dev/null; then
 fi
 
 # Installation der Pakete nach Kategorien
-# (Zusätzlich stow installieren, falls nicht in packages.conf)
-sudo pacman -S --needed stow --noconfirm
-
 if [[ "$DEV_ONLY" == true ]]; then
-  echo "Installiere System-Utilities..."
+  echo "Installiere System-Utilities & Dev-Tools..."
   install_packages "${SYSTEM_UTILS[@]}"
-  echo "Installiere Entwicklungswerkzeuge..."
   install_packages "${DEV_TOOLS[@]}"
 else
   echo "Installiere alle Paketgruppen..."
@@ -107,29 +115,34 @@ else
   fi
 fi
 
-# --- DOTFILES MIT STOW ---
+# --- 3. AKTION: DOTFILES MIT STOW ---
 echo "------------------------------------------"
-echo "Starte Dotfiles-Einrichtung..."
+echo "Einrichtung der Dotfiles..."
 
 if [ ! -d "$DOTFILES_DIR" ]; then
-  echo "Klone Dotfiles von GitHub..."
+  echo "Klone Dotfiles von: $DOTFILES_REPO"
   git clone "$DOTFILES_REPO" "$DOTFILES_DIR"
 else
-  echo "Dotfiles-Ordner existiert bereits. Überspringe Klonen."
+  echo "Dotfiles-Ordner bereits vorhanden. Ziehe Updates..."
+  cd "$DOTFILES_DIR" && git pull && cd -
 fi
 
 cd "$DOTFILES_DIR"
-echo "Wende Stow an..."
+echo "Verknüpfe Konfigurationen mit GNU Stow..."
 
-# Hier werden alle Unterordner in ~/dotfiles per Symlink in dein Home-Verzeichnis verknüpft
-# Beispiel: ~/dotfiles/nvim/ wird zu ~/.config/nvim/
+# Gehe durch alle Top-Level Verzeichnisse im Dotfiles-Ordner
 for dir in */; do
-    # Entferne den Slash am Ende für den stow Befehl
     target=${dir%/}
-    echo "Verknüpfe Konfiguration für: $target"
-    stow "$target"
+    # Ignoriere den .git Ordner
+    if [ "$target" != ".git" ]; then
+        echo "Stowing: $target"
+        # --adopt überschreibt lokale Dateien mit den Links aus dem Repo 
+        # (Vorsicht: Falls du lokale Änderungen hast, die nicht im Repo sind!)
+        stow "$target"
+    fi
 done
 
 cd ~
 echo "------------------------------------------"
-echo "Setup abgeschlossen! Bitte starte dein System neu."
+echo "Setup erfolgreich abgeschlossen!"
+echo "Tipp: Starte dein System neu, um alle Änderungen zu übernehmen."
