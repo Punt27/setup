@@ -1,28 +1,31 @@
 #!/bin/bash
 
-# Function to check if a package is installed
-is_installed() {
-  pacman -Qi "$1" &> /dev/null
-}
+# Farbiges Logging
+INFO='\033[0;36m'
+SUCCESS='\033[0;32m'
+WARN='\033[1;33m'
+NC='\033[0m'
 
-# Function to check if a package is installed
-is_group_installed() {
-  pacman -Qg "$1" &> /dev/null
-}
-
-# Function to install packages if not already installed
 install_packages() {
-  local packages=("$@")
-  local to_install=()
-
-  for pkg in "${packages[@]}"; do
-    if ! is_installed "$pkg" && ! is_group_installed "$pkg"; then
-      to_install+=("$pkg")
-    fi
-  done
-
-  if [ ${#to_install[@]} -ne 0 ]; then
-    echo "Installing: ${to_install[*]}"
-    yay -S --noconfirm "${to_install[@]}"
-  fi
-} 
+    local pkgs=("$@")
+    echo -e "${INFO}Überprüfe und installiere Pakete: ${pkgs[*]}${NC}"
+    
+    for pkg in "${pkgs[@]}"; do
+        if pacman -Qi "$pkg" &> /dev/null; then
+            echo -e "  [${SUCCESS}OK${NC}] $pkg ist bereits installiert."
+        else
+            echo -e "  [${INFO}..${NC}] Installiere $pkg..."
+            if sudo pacman -S --noconfirm --needed "$pkg"; then
+                echo -e "  [${SUCCESS}OK${NC}] $pkg erfolgreich installiert."
+            else
+                # Falls pacman fehlschlägt, versuche es über yay
+                if command -v yay &> /dev/null; then
+                    echo -e "  [${INFO}AUR${NC}] Versuche $pkg über AUR zu installieren..."
+                    yay -S --noconfirm --needed "$pkg" || echo -e "  [${WARN}WARN${NC}] Konnte $pkg nicht installieren."
+                else
+                    echo -e "  [${WARN}WARN${NC}] Konnte $pkg nicht finden."
+                fi
+            fi
+        fi
+    done
+}
