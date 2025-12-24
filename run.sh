@@ -1,8 +1,9 @@
 #!/bin/bash
 
-# --- KONFIGURATION FÜR DOTFILES ---
+# --- KONFIGURATION ---
 DOTFILES_REPO="https://github.com/DEIN_NUTZERNAME/dotfiles.git"
 DOTFILES_DIR="$HOME/dotfiles"
+ZSH_CUSTOM=${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}
 
 # Logo ausgeben
 print_logo() {
@@ -30,114 +31,92 @@ while [[ "$#" -gt 0 ]]; do
   esac
 done
 
-# Bildschirm leeren und Logo zeigen
 clear
 print_logo
 
-# --- 1. AKTION: SMB-SETUP ---
+# --- 1. SMB-SETUP ---
 if [ -f "./setup_smb.sh" ]; then
   echo ">>> Starte SMB-Setup..."
   chmod +x ./setup_smb.sh
   ./setup_smb.sh
-else
-  echo "Hinweis: setup_smb.sh wurde nicht gefunden."
 fi
 
-# --- 2. AKTION: OPTIONALES DRIVE-SETUP ---
+# --- 2. OPTIONALES DRIVE-SETUP ---
 if [ -f "./setup_drive.sh" ]; then
   echo ""
-  read -p "Möchtest du das Drive-Setup (Laufwerke konfigurieren) ausführen? (j/n): " choice
+  read -p "Möchtest du das Drive-Setup (Laufwerke) ausführen? (j/n): " choice
   case "$choice" in 
-    j|J|y|Y ) 
-      echo ">>> Starte Drive-Setup..."
-      chmod +x ./setup_drive.sh
-      ./setup_drive.sh
-      ;;
-    * ) 
-      echo ">>> Drive-Setup übersprungen."
-      ;;
+    j|J|y|Y ) chmod +x ./setup_drive.sh; ./setup_drive.sh ;;
+    * ) echo ">>> Drive-Setup übersprungen." ;;
   esac
-else
-  echo "Hinweis: setup_drive.sh wurde nicht gefunden."
 fi
 
-# Ab hier bei Fehlern abbrechen
 set -e
-
-# Hilfsfunktionen laden
 source utils.sh
-
-# Paketliste laden
-if [ ! -f "packages.conf" ]; then
-  echo "Fehler: packages.conf nicht gefunden!"
-  exit 1
-fi
 source packages.conf
 
-if [[ "$DEV_ONLY" == true ]]; then
-  echo "Modus: Reines Entwicklungs-Setup"
-else
-  echo "Modus: Vollständiges System-Setup"
-fi
-
-# System aktualisieren
-echo "Aktualisiere System-Datenbanken..."
+# System Update & Basis-Tools
+echo ">>> Bereite System vor..."
 sudo pacman -Syu --noconfirm
+sudo pacman -S --needed git base-devel stow zsh --noconfirm
 
-# Grundlegende Tools installieren
-echo "Installiere Basis-Tools (git, stow, base-devel)..."
-sudo pacman -S --needed git base-devel stow --noconfirm
-
-# Installiere yay (AUR Helper)
+# Installiere yay
 if ! command -v yay &> /dev/null; then
-  echo "Installiere yay AUR Helper..."
-  git clone https://aur.archlinux.org/yay.git
-  cd yay
-  makepkg -si --noconfirm
-  cd ..
-  rm -rf yay
+  echo ">>> Installiere yay..."
+  git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si --noconfirm && cd .. && rm -rf yay
 fi
 
-# Installation der Pakete
+# --- 3. OH MY ZSH, PLUGINS & POWERLEVEL10K ---
+echo ">>> Richte Oh My Zsh Framework ein..."
+if [ ! -d "$HOME/.oh-my-zsh" ]; then
+  sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+fi
+
+echo ">>> Installiere Zsh-Plugins und Powerlevel10k..."
+# Plugins
+[ ! -d "$ZSH_CUSTOM/plugins/zsh-autosuggestions" ] && git clone https://github.com/zsh-users/zsh-autosuggestions "$ZSH_CUSTOM/plugins/zsh-autosuggestions"
+[ ! -d "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" ] && git clone https://github.com/zsh-users/zsh-syntax-highlighting.git "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting"
+
+# Powerlevel10k Theme
+[ ! -d "$ZSH_CUSTOM/themes/powerlevel10k" ] && git clone --depth=1 https://github.com/romkatv/powerlevel10k.git "$ZSH_CUSTOM/themes/powerlevel10k"
+
+# Standard-Shell auf Zsh ändern
+if [ "$SHELL" != "/usr/bin/zsh" ]; then
+  echo ">>> Ändere Standard-Shell auf Zsh..."
+  sudo chsh -s /usr/bin/zsh $USER
+fi
+
+# --- 4. PAKET INSTALLATION ---
 if [[ "$DEV_ONLY" == true ]]; then
-  echo "Installiere System-Utilities & Dev-Tools..."
-  install_packages "${SYSTEM_UTILS[@]}"
-  install_packages "${DEV_TOOLS[@]}"
+  install_packages "${SYSTEM_UTILS[@]}" "${DEV_TOOLS[@]}"
 else
-  echo "Installiere alle Paketgruppen..."
   install_packages "${SYSTEM_UTILS[@]}" "${DEV_TOOLS[@]}" "${MAINTENANCE[@]}" "${DESKTOP[@]}" "${OFFICE[@]}" "${MEDIA[@]}" "${FONTS[@]}"
-  
-  # Dienste aktivieren
-  echo "Konfiguriere Dienste..."
   for service in "${SERVICES[@]}"; do
-    if ! systemctl is-enabled "$service" &> /dev/null; then
-      echo "Aktiviere $service..."
-      sudo systemctl enable "$service"
-    fi
+    sudo systemctl enable "$service" || true
   done
-
-  # Flatpaks
-  if [ -f "install-flatpaks.sh" ]; then
-    echo "Installiere Flatpaks..."
-    source install-flatpaks.sh
-  fi
+  [ -f "install-flatpaks.sh" ] && source install-flatpaks.sh
 fi
 
-# --- 3. AKTION: DOTFILES MIT STOW ---
+# --- 5. DOTFILES MIT STOW ---
 echo "------------------------------------------"
-echo "Einrichtung der Dotfiles..."
-
+echo ">>> Verknüpfe Dotfiles mit Stow..."
 if [ ! -d "$DOTFILES_DIR" ]; then
-  echo "Klone Dotfiles von: $DOTFILES_REPO"
+  echo "Klone Dotfiles..."
   git clone "$DOTFILES_REPO" "$DOTFILES_DIR"
-else
-  echo "Dotfiles-Ordner bereits vorhanden. Aktualisiere..."
-  cd "$DOTFILES_DIR" && git pull && cd -
 fi
 
 cd "$DOTFILES_DIR"
-echo "Verknüpfe Konfigurationen mit GNU Stow..."
 
+# Backup von Standard-Configs, damit Stow linken kann
+# Wir sichern .zshrc und .p10k.zsh falls sie als echte Dateien existieren
+for file in ".zshrc" ".p10k.zsh"; do
+    if [ -f "$HOME/$file" ] && [ ! -L "$HOME/$file" ]; then
+        echo "Sichere existierende $file nach $file.bak"
+        mv "$HOME/$file" "$HOME/$file.bak"
+    fi
+done
+
+# Stow ausführen für alle Ordner
 for dir in */; do
     target=${dir%/}
     if [ "$target" != ".git" ]; then
@@ -148,4 +127,6 @@ done
 
 cd ~
 echo "------------------------------------------"
-echo "Setup erfolgreich abgeschlossen!"
+echo "Setup abgeschlossen! Alles bereit."
+echo "WICHTIG: Stelle sicher, dass eine 'Nerd Font' in deinem Terminal aktiv ist!"
+echo "Nach dem Neustart des Terminals startet ggf. der p10k-Konfigurator."
