@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # --- KONFIGURATION FÜR DOTFILES ---
-# Bitte hier deine GitHub-URL und den Zielordner anpassen
 DOTFILES_REPO="https://github.com/DEIN_NUTZERNAME/dotfiles.git"
 DOTFILES_DIR="$HOME/dotfiles"
 
@@ -44,11 +43,20 @@ else
   echo "Hinweis: setup_smb.sh wurde nicht gefunden."
 fi
 
-# --- 2. AKTION: DRIVE-SETUP ---
+# --- 2. AKTION: OPTIONALES DRIVE-SETUP ---
 if [ -f "./setup_drive.sh" ]; then
-  echo ">>> Starte Drive-Setup (Laufwerke)..."
-  chmod +x ./setup_drive.sh
-  ./setup_drive.sh
+  echo ""
+  read -p "Möchtest du das Drive-Setup (Laufwerke konfigurieren) ausführen? (j/n): " choice
+  case "$choice" in 
+    j|J|y|Y ) 
+      echo ">>> Starte Drive-Setup..."
+      chmod +x ./setup_drive.sh
+      ./setup_drive.sh
+      ;;
+    * ) 
+      echo ">>> Drive-Setup übersprungen."
+      ;;
+  esac
 else
   echo "Hinweis: setup_drive.sh wurde nicht gefunden."
 fi
@@ -76,11 +84,11 @@ fi
 echo "Aktualisiere System-Datenbanken..."
 sudo pacman -Syu --noconfirm
 
-# Grundlegende Tools installieren (inkl. stow für später)
+# Grundlegende Tools installieren
 echo "Installiere Basis-Tools (git, stow, base-devel)..."
 sudo pacman -S --needed git base-devel stow --noconfirm
 
-# Installiere yay (AUR Helper), falls nicht vorhanden
+# Installiere yay (AUR Helper)
 if ! command -v yay &> /dev/null; then
   echo "Installiere yay AUR Helper..."
   git clone https://aur.archlinux.org/yay.git
@@ -90,7 +98,7 @@ if ! command -v yay &> /dev/null; then
   rm -rf yay
 fi
 
-# Installation der Pakete nach Kategorien
+# Installation der Pakete
 if [[ "$DEV_ONLY" == true ]]; then
   echo "Installiere System-Utilities & Dev-Tools..."
   install_packages "${SYSTEM_UTILS[@]}"
@@ -123,21 +131,17 @@ if [ ! -d "$DOTFILES_DIR" ]; then
   echo "Klone Dotfiles von: $DOTFILES_REPO"
   git clone "$DOTFILES_REPO" "$DOTFILES_DIR"
 else
-  echo "Dotfiles-Ordner bereits vorhanden. Ziehe Updates..."
+  echo "Dotfiles-Ordner bereits vorhanden. Aktualisiere..."
   cd "$DOTFILES_DIR" && git pull && cd -
 fi
 
 cd "$DOTFILES_DIR"
 echo "Verknüpfe Konfigurationen mit GNU Stow..."
 
-# Gehe durch alle Top-Level Verzeichnisse im Dotfiles-Ordner
 for dir in */; do
     target=${dir%/}
-    # Ignoriere den .git Ordner
     if [ "$target" != ".git" ]; then
         echo "Stowing: $target"
-        # --adopt überschreibt lokale Dateien mit den Links aus dem Repo 
-        # (Vorsicht: Falls du lokale Änderungen hast, die nicht im Repo sind!)
         stow "$target"
     fi
 done
@@ -145,4 +149,3 @@ done
 cd ~
 echo "------------------------------------------"
 echo "Setup erfolgreich abgeschlossen!"
-echo "Tipp: Starte dein System neu, um alle Änderungen zu übernehmen."
